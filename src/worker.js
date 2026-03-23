@@ -54,7 +54,9 @@ export async function processContact(supabase, contact) {
 
   try {
     // 1. Navigate — wait for full JS load
-    await page.goto(FORM_URL, { waitUntil: "networkidle", timeout: 30000 });
+    await page.goto(FORM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // Wait for the form to be actually rendered
+    await page.waitForSelector('button[type="submit"]', { timeout: 30000 });
 
     // 2. Fill required fields
     await page.fill(fieldSelector(FIELDS.email), contact.email);
@@ -85,7 +87,8 @@ export async function processContact(supabase, contact) {
     await page.click('button[type="submit"]');
 
     // 5. Wait for response and check success
-    await page.waitForLoadState("networkidle", { timeout: 15000 });
+    await page.waitForLoadState("domcontentloaded", { timeout: 15000 });
+    await sleep(3000, 5000); // Let the page settle after submission
 
     const pageText = await page.textContent("body");
     const success =
