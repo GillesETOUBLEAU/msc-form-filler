@@ -81,19 +81,18 @@ export async function processContact(supabase, contact) {
       if (data.telephone) setVal('phoneNumber', data.telephone);
     }, contact);
 
-    // 3. Fill optional select fields
-    if (contact.experience_navigation) {
-      await page.selectOption(
-        fieldSelector(FIELDS.experience_navigation),
-        contact.experience_navigation
-      );
-    }
-    if (contact.destination) {
-      await page.selectOption(
-        fieldSelector(FIELDS.destination),
-        contact.destination
-      );
-    }
+    // 3. Fill optional select fields (also via evaluate to bypass visibility)
+    await page.evaluate((data) => {
+      const setSelect = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && val) {
+          el.value = val;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      };
+      setSelect('fxb_110379d3-2410-4d74-ba93-4b3ead5d6945_Fields_155e5d57-5454-4d31-b3a5-15e45b824b74__Value', data.experience);
+      setSelect('fxb_110379d3-2410-4d74-ba93-4b3ead5d6945_Fields_5031aa2c-e08a-4e60-b91f-fe1d7b6209a5__Value', data.destination);
+    }, { experience: contact.experience_navigation, destination: contact.destination });
 
     // 4. Check marketing consent checkbox
     await page.evaluate(() => {
