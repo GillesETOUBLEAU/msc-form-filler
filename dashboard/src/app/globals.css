@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --color-primary: oklch(0.55 0.15 250);
+  --color-success: oklch(0.6 0.18 145);
+  --color-warning: oklch(0.7 0.15 85);
+  --color-danger: oklch(0.55 0.2 25);
+}
