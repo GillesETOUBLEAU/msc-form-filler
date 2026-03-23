@@ -56,19 +56,16 @@ export async function processContact(supabase, contact) {
     // 1. Navigate — wait for full JS load
     await page.goto(FORM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     // Wait for the form to be actually rendered
-    await page.waitForSelector('button[type="submit"]', { timeout: 30000 });
+    await page.waitForSelector('#email', { timeout: 30000 });
 
-    // 2. Fill required fields
-    await page.fill(fieldSelector(FIELDS.email), contact.email);
-    await page.fill(fieldSelector(FIELDS.prenom), contact.prenom);
-    await page.fill(fieldSelector(FIELDS.nom), contact.nom);
+    // 2. Fill required fields (using IDs from the actual MSC form)
+    await page.fill('#email', contact.email);
+    await page.fill('#firstName', contact.prenom);
+    await page.fill('#lastName', contact.nom);
 
     // 3. Fill optional fields
     if (contact.telephone) {
-      await page.fill(fieldSelector(FIELDS.telephone), contact.telephone);
-    }
-    if (contact.date_naissance) {
-      await page.fill(fieldSelector(FIELDS.date_naissance), contact.date_naissance);
+      await page.fill('#phoneNumber', contact.telephone);
     }
     if (contact.experience_navigation) {
       await page.selectOption(
@@ -83,8 +80,14 @@ export async function processContact(supabase, contact) {
       );
     }
 
-    // 4. Submit
-    await page.click('button[type="submit"]');
+    // 4. Check marketing consent checkbox
+    const consent = page.locator('#marketingConsent');
+    if (!(await consent.isChecked())) {
+      await consent.check();
+    }
+
+    // 5. Submit
+    await page.click('input[type="submit"]');
 
     // 5. Wait for response and check success
     await page.waitForLoadState("domcontentloaded", { timeout: 15000 });
