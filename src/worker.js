@@ -55,18 +55,33 @@ export async function processContact(supabase, contact) {
   try {
     // 1. Navigate — wait for full JS load
     await page.goto(FORM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-    // Wait for the form to be actually rendered
-    await page.waitForSelector('#email', { timeout: 30000 });
+    // Wait for the form to exist in DOM (may be hidden behind cookie banner)
+    await page.waitForSelector('#email', { state: 'attached', timeout: 30000 });
 
-    // 2. Fill required fields (using IDs from the actual MSC form)
-    await page.fill('#email', contact.email);
-    await page.fill('#firstName', contact.prenom);
-    await page.fill('#lastName', contact.nom);
+    // Dismiss cookie banner if present
+    try {
+      const cookieBtn = page.locator('[id*="onetrust-accept"], [class*="cookie"] button, [class*="accept-cookies"], button:has-text("Accepter"), button:has-text("Accept")');
+      await cookieBtn.first().click({ timeout: 5000 });
+      await sleep(1000, 2000);
+    } catch { /* no cookie banner, continue */ }
 
-    // 3. Fill optional fields
-    if (contact.telephone) {
-      await page.fill('#phoneNumber', contact.telephone);
-    }
+    // 2. Fill required fields using evaluate (bypasses visibility checks)
+    await page.evaluate((data) => {
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      };
+      setVal('email', data.email);
+      setVal('firstName', data.prenom);
+      setVal('lastName', data.nom);
+      if (data.telephone) setVal('phoneNumber', data.telephone);
+    }, contact);
+
+    // 3. Fill optional select fields
     if (contact.experience_navigation) {
       await page.selectOption(
         fieldSelector(FIELDS.experience_navigation),
@@ -81,13 +96,19 @@ export async function processContact(supabase, contact) {
     }
 
     // 4. Check marketing consent checkbox
-    const consent = page.locator('#marketingConsent');
-    if (!(await consent.isChecked())) {
-      await consent.check();
-    }
+    await page.evaluate(() => {
+      const cb = document.getElementById('marketingConsent');
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
 
     // 5. Submit
-    await page.click('input[type="submit"]');
+    await page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"]');
+      if (btn) btn.click();
+    });
 
     // 5. Wait for response and check success
     await page.waitForLoadState("domcontentloaded", { timeout: 15000 });
