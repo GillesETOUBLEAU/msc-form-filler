@@ -100,7 +100,10 @@
 | `email` | TEXT | Email (obligatoire) |
 | `prenom` | TEXT | Prénom (obligatoire) |
 | `nom` | TEXT | Nom (obligatoire, max 15 char côté form Marketo) |
-| `telephone` | TEXT | Téléphone (obligatoire) |
+| `telephone` | TEXT | Téléphone (obligatoire — sinon Marketo rejette) |
+| `profiling_consent` | BOOLEAN | Checkbox "expérience personnalisée" du quiz |
+| `quiz_answers` | JSONB | Array des 5 réponses du quiz (ex. `["B","A","D","C","B"]`) |
+| `profile_letter` | TEXT | Profil calculé : `'A'` / `'B'` / `'C'` / `'D'` |
 | `status` | TEXT | `pending` → `processing` → `done` / `error` |
 | `processed_at` | TIMESTAMPTZ | Date de traitement |
 | `process_details` | TEXT | "OK" ou message d'erreur (max 500 chars) |
@@ -136,4 +139,4 @@ npm run headed     # Mode avec navigateur visible (debug)
 - **`prenom` / `nom` 15 char max** — Le formulaire Marketo (champs `firstNameWebform` / `lastNameWebform`) tronque silencieusement au-delà.
 - **RLS permissive** — La table accepte les inserts anonymes via la clé publishable (utilisée par le quiz public). Lecture/update/delete restent réservés au service_role.
 - **Cookie banner** — Le worker tente de fermer OneTrust avant que Marketo monte le formulaire
-- **`profilingConsent`** — Le quiz a une checkbox "expérience personnalisée" qui n'est plus transmise (la table n'a pas de colonne dédiée). À ajouter si MSC veut suivre cette préférence.
+- **Quiz answers en deux écritures** — Le quiz fait un INSERT au submit du formulaire (lead capture, même en cas d'abandon), puis un PATCH sur la même row à la fin du quiz pour ajouter `quiz_answers` + `profile_letter`. Si l'utilisateur abandonne, ces colonnes restent NULL pour cette row.

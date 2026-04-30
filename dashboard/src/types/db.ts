@@ -8,6 +8,9 @@ export interface MscNewsletterContact {
   status: "pending" | "processing" | "done" | "error";
   processed_at: string | null;
   process_details: string | null;
+  quiz_answers: (string | null)[] | null;
+  profile_letter: "A" | "B" | "C" | "D" | null;
+  profiling_consent: boolean | null;
 }
 
 export interface Database {
@@ -24,6 +27,9 @@ export interface Database {
           status: string;
           processed_at: string | null;
           process_details: string | null;
+          quiz_answers: unknown | null;
+          profile_letter: string | null;
+          profiling_consent: boolean | null;
         };
         Insert: {
           email: string;
@@ -35,6 +41,9 @@ export interface Database {
           status?: string;
           processed_at?: string | null;
           process_details?: string | null;
+          quiz_answers?: unknown | null;
+          profile_letter?: string | null;
+          profiling_consent?: boolean | null;
         };
         Update: {
           email?: string;
@@ -44,6 +53,9 @@ export interface Database {
           status?: string;
           processed_at?: string | null;
           process_details?: string | null;
+          quiz_answers?: unknown | null;
+          profile_letter?: string | null;
+          profiling_consent?: boolean | null;
         };
         Relationships: [];
       };
