@@ -11,22 +11,24 @@
 ## Architecture
 
 ```
-                        Supabase (PostgreSQL)
+   quiz-msc-escale-a-paris.fr  ─┐    Dashboard (Next.js)  ─┐
+   (WMH-Project quiz, Vite)     │    ajout manuel          │
+                                ▼                          ▼
+                       Supabase (PostgreSQL)
                    msc_newsletter_contacts table
                  pending → processing → done/error
-                        ▲               ▲
-                        │               │
-              ┌─────────┘               └─────────┐
-              │                                   │
-    ┌─────────────────┐             ┌─────────────────────┐
-    │  Worker (Node)  │             │  Dashboard (Next.js) │
-    │  Playwright     │             │  Port 3000           │
-    │  Headless       │             │  SSR + Server Actions│
-    └─────────────────┘             └─────────────────────┘
-              │
-              ▼
-    info.msccruises.com/stand-pop-up.html  (Marketo Forms 2)
+                                │
+                                ▼
+                  Worker (Node + Playwright headless)
+                                │
+                                ▼
+              info.msccruises.com/stand-pop-up.html
+                       (Marketo Forms 2)
 ```
+
+**Sources d'inscription :**
+- **Quiz public** ([WMH-Project/msc-cruise-profile-finder](https://github.com/WMH-Project/msc-cruise-profile-finder)) — POST direct vers `/rest/v1/msc_newsletter_contacts` avec la clé Supabase publishable
+- **Dashboard ops** — server action Next.js, ajout à la main / import
 
 ### Deux services Railway (même repo GitHub)
 
@@ -57,12 +59,12 @@
 
 | Composant | Technologie | Version |
 |-----------|------------|---------|
-| Worker | Node.js + Playwright | v1.58.2 |
+| Worker | Node.js + Playwright | v1.59.1 |
 | Dashboard | Next.js + React | 15.x / 19.x |
 | CSS | Tailwind CSS | v4 |
 | Base de données | Supabase (PostgreSQL) | — |
 | Hébergement | Railway | 2 services |
-| Docker (Worker) | `mcr.microsoft.com/playwright:v1.58.2-jammy` | — |
+| Docker (Worker) | `mcr.microsoft.com/playwright:v1.59.1-jammy` | — |
 | Docker (Dashboard) | `node:20-alpine` (multi-stage) | — |
 
 ---
@@ -107,9 +109,12 @@
 
 ## Flux de traitement
 
-1. **Ajout** — Contact ajouté via le dashboard (ou directement en base) avec `status = 'pending'`
-2. **Détection** — Le worker reçoit l'event Realtime INSERT (ou le découvre au polling)
-3. **Traitement** — Playwright ouvre la page MSC, remplit le formulaire, soumet
+1. **Ajout** — Contact inséré dans Supabase (`status = 'pending'`) via :
+   - le quiz `quiz-msc-escale-a-paris.fr` (REST avec clé publishable)
+   - le dashboard ops (server action Next.js)
+   - insertion directe en base
+2. **Détection** — Le worker reçoit l'event Realtime INSERT (ou le découvre au polling 60s)
+3. **Traitement** — Playwright ouvre `info.msccruises.com/stand-pop-up.html`, pilote le SDK Marketo (`form.vals` + `form.submit`), attend le callback `onSuccess`
 4. **Résultat** — Status mis à jour : `done` (succès) ou `error` (avec détail)
 
 ---
@@ -129,6 +134,6 @@ npm run headed     # Mode avec navigateur visible (debug)
 
 - **Dépendance Marketo** — Si MSC change `formId` ou `munchkinId`, le worker cassera. Vérifier `MktoForms2.getForm(<id>)` dans la console si besoin.
 - **`prenom` / `nom` 15 char max** — Le formulaire Marketo (champs `firstNameWebform` / `lastNameWebform`) tronque silencieusement au-delà.
-- **Pas de webhook** — L'ingestion se fait uniquement via le dashboard ou insertion directe en base
-- **Pas de RLS** — La table est accessible avec la clé service_role (pas de Row Level Security)
+- **RLS permissive** — La table accepte les inserts anonymes via la clé publishable (utilisée par le quiz public). Lecture/update/delete restent réservés au service_role.
 - **Cookie banner** — Le worker tente de fermer OneTrust avant que Marketo monte le formulaire
+- **`profilingConsent`** — Le quiz a une checkbox "expérience personnalisée" qui n'est plus transmise (la table n'a pas de colonne dédiée). À ajouter si MSC veut suivre cette préférence.
