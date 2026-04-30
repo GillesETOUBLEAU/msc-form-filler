@@ -4,10 +4,7 @@ export interface MscNewsletterContact {
   email: string;
   prenom: string;
   nom: string;
-  telephone: string | null;
-  date_naissance: string | null;
-  experience_navigation: string | null;
-  destination: string | null;
+  telephone: string;
   status: "pending" | "processing" | "done" | "error";
   processed_at: string | null;
   process_details: string | null;
@@ -23,10 +20,7 @@ export interface Database {
           email: string;
           prenom: string;
           nom: string;
-          telephone: string | null;
-          date_naissance: string | null;
-          experience_navigation: string | null;
-          destination: string | null;
+          telephone: string;
           status: string;
           processed_at: string | null;
           process_details: string | null;
@@ -35,10 +29,7 @@ export interface Database {
           email: string;
           prenom: string;
           nom: string;
-          telephone?: string | null;
-          date_naissance?: string | null;
-          experience_navigation?: string | null;
-          destination?: string | null;
+          telephone: string;
           id?: string;
           created_at?: string;
           status?: string;
@@ -49,10 +40,7 @@ export interface Database {
           email?: string;
           prenom?: string;
           nom?: string;
-          telephone?: string | null;
-          date_naissance?: string | null;
-          experience_navigation?: string | null;
-          destination?: string | null;
+          telephone?: string;
           status?: string;
           processed_at?: string | null;
           process_details?: string | null;

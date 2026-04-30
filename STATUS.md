@@ -1,6 +1,6 @@
 # MSC Form Filler — État des lieux
 
-> Dernière mise à jour : 23 mars 2026
+> Dernière mise à jour : 30 avril 2026
 
 ## Dashboard
 
@@ -25,7 +25,7 @@
     └─────────────────┘             └─────────────────────┘
               │
               ▼
-    msccroisieres.fr/formulaires/inscription-newsletter
+    info.msccruises.com/stand-pop-up.html  (Marketo Forms 2)
 ```
 
 ### Deux services Railway (même repo GitHub)
@@ -41,7 +41,7 @@
 
 | Fonctionnalité | Status | Détails |
 |----------------|--------|---------|
-| Remplissage automatique du formulaire MSC | ✅ | Via Playwright headless + `page.evaluate()` |
+| Remplissage automatique du formulaire MSC | ✅ | Playwright headless pilote `MktoForms2` (form 4669, munchkin `271-DJN-199`) |
 | Déclenchement temps réel (Realtime) | ✅ | Supabase Realtime sur INSERT → traitement immédiat |
 | Polling de secours | ✅ | Toutes les 60s, vérifie les `pending` manqués |
 | Rate limit (concurrence) | ✅ | Semaphore `MAX_CONCURRENCY=10` |
@@ -97,11 +97,8 @@
 | `created_at` | TIMESTAMPTZ | Date de création |
 | `email` | TEXT | Email (obligatoire) |
 | `prenom` | TEXT | Prénom (obligatoire) |
-| `nom` | TEXT | Nom (obligatoire) |
-| `telephone` | TEXT | Téléphone (optionnel) |
-| `date_naissance` | TEXT | Date de naissance JJ/MM/AAAA (optionnel) |
-| `experience_navigation` | TEXT | Expérience croisière : '1','2','3','4' (optionnel) |
-| `destination` | TEXT | Destination souhaitée (optionnel) |
+| `nom` | TEXT | Nom (obligatoire, max 15 char côté form Marketo) |
+| `telephone` | TEXT | Téléphone (obligatoire) |
 | `status` | TEXT | `pending` → `processing` → `done` / `error` |
 | `processed_at` | TIMESTAMPTZ | Date de traitement |
 | `process_details` | TEXT | "OK" ou message d'erreur (max 500 chars) |
@@ -130,7 +127,8 @@ npm run headed     # Mode avec navigateur visible (debug)
 
 ## Points d'attention
 
-- **Fragilité des sélecteurs** — Si MSC modifie son formulaire (IDs, structure), le worker cassera
+- **Dépendance Marketo** — Si MSC change `formId` ou `munchkinId`, le worker cassera. Vérifier `MktoForms2.getForm(<id>)` dans la console si besoin.
+- **`prenom` / `nom` 15 char max** — Le formulaire Marketo (champs `firstNameWebform` / `lastNameWebform`) tronque silencieusement au-delà.
 - **Pas de webhook** — L'ingestion se fait uniquement via le dashboard ou insertion directe en base
 - **Pas de RLS** — La table est accessible avec la clé service_role (pas de Row Level Security)
-- **Cookie banner** — Le worker tente de le fermer, sinon utilise `evaluate()` pour bypasser
+- **Cookie banner** — Le worker tente de fermer OneTrust avant que Marketo monte le formulaire

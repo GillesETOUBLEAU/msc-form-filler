@@ -11,29 +11,24 @@ export async function addContact(formData: FormData): Promise<ActionResult> {
   const email = formData.get("email") as string;
   const prenom = formData.get("prenom") as string;
   const nom = formData.get("nom") as string;
-  const telephone = (formData.get("telephone") as string) || null;
-  const date_naissance = (formData.get("date_naissance") as string) || null;
-  const experience_navigation =
-    (formData.get("experience_navigation") as string) || null;
-  const destination = (formData.get("destination") as string) || null;
+  const telephone = formData.get("telephone") as string;
 
-  if (!email || !prenom || !nom) {
-    return { data: null, error: "Email, prénom et nom sont requis." };
+  if (!email || !prenom || !nom || !telephone) {
+    return { data: null, error: "Email, prénom, nom et téléphone sont requis." };
+  }
+
+  if (prenom.length > 15 || nom.length > 15) {
+    return {
+      data: null,
+      error: "Le formulaire MSC limite prénom et nom à 15 caractères.",
+    };
   }
 
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("msc_newsletter_contacts")
-    .insert({
-      email,
-      prenom,
-      nom,
-      telephone,
-      date_naissance,
-      experience_navigation,
-      destination,
-    })
+    .insert({ email, prenom, nom, telephone })
     .select("id")
     .single();
 

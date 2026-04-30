@@ -1,9 +1,5 @@
 import { chromium } from "playwright";
-import { FORM_URL, FIELDS, TABLE, fieldSelector, sleep, log } from "./config.js";
-
-// ---------------------------------------------------------------------------
-// Browser management
-// ---------------------------------------------------------------------------
+import { FORM_URL, MKTO_FORM_ID, NAME_MAX_LENGTH, sleep, log } from "./config.js";
 
 let browser = null;
 let context = null;
@@ -36,98 +32,109 @@ export async function closeBrowser() {
   log("Browser closed.");
 }
 
-// ---------------------------------------------------------------------------
-// Process a single contact
-// ---------------------------------------------------------------------------
+function truncate(value, max) {
+  if (!value) return value;
+  return value.length > max ? value.slice(0, max) : value;
+}
 
 export async function processContact(supabase, contact) {
   const label = `${contact.prenom} ${contact.nom} <${contact.email}>`;
   log(`Processing: ${label}`);
 
-  // Mark as processing
   await supabase
-    .from(TABLE)
+    .from("msc_newsletter_contacts")
     .update({ status: "processing" })
     .eq("id", contact.id);
 
   const page = await context.newPage();
 
   try {
-    // 1. Navigate — wait for full JS load
     await page.goto(FORM_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-    // Wait for the form to exist in DOM (may be hidden behind cookie banner)
-    await page.waitForSelector('#email', { state: 'attached', timeout: 30000 });
 
-    // Dismiss cookie banner if present
+    // Cookie banner (OneTrust on info.msccruises.com).
     try {
-      const cookieBtn = page.locator('[id*="onetrust-accept"], [class*="cookie"] button, [class*="accept-cookies"], button:has-text("Accepter"), button:has-text("Accept")');
+      const cookieBtn = page.locator(
+        '#onetrust-accept-btn-handler, [id*="onetrust-accept"], button:has-text("Accepter"), button:has-text("Accept")'
+      );
       await cookieBtn.first().click({ timeout: 5000 });
-      await sleep(1000, 2000);
-    } catch { /* no cookie banner, continue */ }
+      await sleep(800, 1500);
+    } catch { /* no banner */ }
 
-    // 2. Fill required fields using evaluate (bypasses visibility checks)
-    await page.evaluate((data) => {
-      const setVal = (id, val) => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.value = val;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
+    // Wait for Marketo to render the form into the DOM.
+    await page.waitForFunction(
+      (formId) =>
+        window.MktoForms2 &&
+        typeof window.MktoForms2.getForm === "function" &&
+        window.MktoForms2.getForm(formId),
+      MKTO_FORM_ID,
+      { timeout: 30000 }
+    );
+
+    const fillResult = await page.evaluate(
+      ({ formId, values }) => {
+        const form = window.MktoForms2.getForm(formId);
+        if (!form) return { ok: false, reason: "form_not_found" };
+        form.vals(values);
+        // flgProfiling is a single-checkbox: setting "yes" via vals() should tick it,
+        // but Marketo wraps checkboxes in a fieldset that sometimes ignores vals().
+        // Force the underlying input to be checked + dispatch change.
+        const cb = form.getFormElem()[0]?.querySelector('input[name="flgProfiling"]');
+        if (cb && !cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event("change", { bubbles: true }));
         }
-      };
-      setVal('email', data.email);
-      setVal('firstName', data.prenom);
-      setVal('lastName', data.nom);
-      if (data.telephone) setVal('phoneNumber', data.telephone);
-    }, contact);
-
-    // 3. Fill optional select fields (also via evaluate to bypass visibility)
-    await page.evaluate((data) => {
-      const setSelect = (id, val) => {
-        const el = document.getElementById(id);
-        if (el && val) {
-          el.value = val;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      };
-      setSelect('fxb_110379d3-2410-4d74-ba93-4b3ead5d6945_Fields_155e5d57-5454-4d31-b3a5-15e45b824b74__Value', data.experience);
-      setSelect('fxb_110379d3-2410-4d74-ba93-4b3ead5d6945_Fields_5031aa2c-e08a-4e60-b91f-fe1d7b6209a5__Value', data.destination);
-    }, { experience: contact.experience_navigation, destination: contact.destination });
-
-    // 4. Check marketing consent checkbox
-    await page.evaluate(() => {
-      const cb = document.getElementById('marketingConsent');
-      if (cb && !cb.checked) {
-        cb.checked = true;
-        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true };
+      },
+      {
+        formId: MKTO_FORM_ID,
+        values: {
+          firstNameWebform: truncate(contact.prenom, NAME_MAX_LENGTH),
+          lastNameWebform: truncate(contact.nom, NAME_MAX_LENGTH),
+          Email: contact.email,
+          phoneWebform: contact.telephone || "",
+          flgProfiling: "yes",
+        },
       }
-    });
+    );
 
-    // 5. Submit
-    await page.evaluate(() => {
-      const btn = document.querySelector('input[type="submit"]');
-      if (btn) btn.click();
-    });
+    if (!fillResult.ok) {
+      throw new Error(`Marketo form not found: ${fillResult.reason}`);
+    }
 
-    // 5. Wait for response and check success
-    await page.waitForLoadState("domcontentloaded", { timeout: 15000 });
-    await sleep(3000, 5000); // Let the page settle after submission
+    // Hook onSuccess BEFORE submitting; resolve a promise from inside the page.
+    const successPromise = page.evaluate((formId) => {
+      return new Promise((resolve) => {
+        const form = window.MktoForms2.getForm(formId);
+        let settled = false;
+        form.onSuccess(() => {
+          if (!settled) {
+            settled = true;
+            resolve({ ok: true });
+          }
+          // Prevent the default thank-you redirect.
+          return false;
+        });
+        // Fallback timeout: 20s.
+        setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve({ ok: false, reason: "timeout" });
+          }
+        }, 20000);
+      });
+    }, MKTO_FORM_ID);
 
-    const pageText = await page.textContent("body");
-    const success =
-      pageText &&
-      (pageText.toLowerCase().includes("merci") ||
-        pageText.toLowerCase().includes("succès") ||
-        pageText.toLowerCase().includes("inscription confirmée"));
+    // Submit.
+    await page.evaluate((formId) => {
+      window.MktoForms2.getForm(formId).submit();
+    }, MKTO_FORM_ID);
 
-    const hasError = await page
-      .locator(".field-validation-error, .validation-summary-errors")
-      .count();
+    const result = await successPromise;
 
-    if (success && hasError === 0) {
+    if (result.ok) {
       log(`  ✓ Success: ${label}`);
       await supabase
-        .from(TABLE)
+        .from("msc_newsletter_contacts")
         .update({
           status: "done",
           processed_at: new Date().toISOString(),
@@ -135,26 +142,26 @@ export async function processContact(supabase, contact) {
         })
         .eq("id", contact.id);
     } else {
-      const errorText = hasError
-        ? await page
-            .locator(".field-validation-error, .validation-summary-errors")
-            .first()
-            .textContent()
-        : "No success confirmation detected";
-      log(`  ✗ Failed: ${label} — ${errorText}`);
+      // Capture Marketo's inline error if any.
+      const errorText = await page.evaluate(() => {
+        const err = document.querySelector(".mktoError .mktoErrorMsg, .mktoErrorMsg");
+        return err?.textContent?.trim() || null;
+      });
+      const detail = errorText || `No success callback (${result.reason || "unknown"})`;
+      log(`  ✗ Failed: ${label} — ${detail}`);
       await supabase
-        .from(TABLE)
+        .from("msc_newsletter_contacts")
         .update({
           status: "error",
           processed_at: new Date().toISOString(),
-          process_details: errorText?.slice(0, 500),
+          process_details: detail.slice(0, 500),
         })
         .eq("id", contact.id);
     }
   } catch (err) {
     log(`  ✗ Error: ${label} — ${err.message}`);
     await supabase
-      .from(TABLE)
+      .from("msc_newsletter_contacts")
       .update({
         status: "error",
         processed_at: new Date().toISOString(),
@@ -165,6 +172,5 @@ export async function processContact(supabase, contact) {
     await page.close();
   }
 
-  // Throttle 5-10s between submissions (anti-detection)
   await sleep(5000, 10000);
 }
