@@ -2,7 +2,18 @@ import { chromium } from "playwright";
 import { FORM_URL, MKTO_FORM_ID, NAME_MAX_LENGTH, sleep, log } from "./config.js";
 
 let browser = null;
-let context = null;
+
+// One context per submission so Marketo's `_mkto_trk` cookie does not persist
+// across leads. Reusing a context made every submission look like the same
+// anonymous visitor, which caused MSC's downstream lead routing to associate
+// new emails with the first visitor's identity (symptom: "email manquant").
+const CONTEXT_OPTIONS = {
+  userAgent:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  locale: "fr-FR",
+  timezoneId: "Europe/Paris",
+  viewport: { width: 1280, height: 800 },
+};
 
 export async function initBrowser(headed = false) {
   browser = await chromium.launch({
@@ -14,20 +25,11 @@ export async function initBrowser(headed = false) {
     ],
   });
 
-  context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    locale: "fr-FR",
-    timezoneId: "Europe/Paris",
-    viewport: { width: 1280, height: 800 },
-  });
-
   log("Browser initialized.");
-  return context;
+  return browser;
 }
 
 export async function closeBrowser() {
-  if (context) await context.close();
   if (browser) await browser.close();
   log("Browser closed.");
 }
@@ -46,6 +48,7 @@ export async function processContact(supabase, contact) {
     .update({ status: "processing" })
     .eq("id", contact.id);
 
+  const context = await browser.newContext(CONTEXT_OPTIONS);
   const page = await context.newPage();
 
   try {
@@ -170,6 +173,7 @@ export async function processContact(supabase, contact) {
       .eq("id", contact.id);
   } finally {
     await page.close();
+    await context.close();
   }
 
   await sleep(5000, 10000);
