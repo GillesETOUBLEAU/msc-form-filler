@@ -30,7 +30,9 @@ export function ErrorList({ errors }: ErrorListProps) {
             </div>
             <span className="shrink-0 text-xs text-gray-500">
               {c.processed_at
-                ? new Date(c.processed_at).toLocaleString("fr-FR")
+                ? new Date(c.processed_at).toLocaleString("fr-FR", {
+                    timeZone: "Europe/Paris",
+                  })
                 : ""}
             </span>
           </div>
